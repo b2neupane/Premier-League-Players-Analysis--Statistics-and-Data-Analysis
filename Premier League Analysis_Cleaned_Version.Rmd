@@ -1,0 +1,511 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+The main objective of this project is to perform a complete statistical analysis of football players performance in English Premier League according to Fifa22. We are exploring the data through the domain of unsupervised learning performing the principal component analysis and clustering analysis (K means Clustering). The goal of this project is to describe in a best possible way in the variation in the different type of players so that it could give insight on how to choose the best players in the team. In a high dimensional data, it is difficult to provide an intuition of the features. So, dimensional reduction is one of the aim of the project, so that it would be easier to visualize the relationship between the features and clusters in the data set we are working on. We visualize the data using these principal components, perform cluster analysis and visualize the clusters and develop an inference for the same.
+
+DATASET
+Featuring more than 30 official leagues, over 700 cluns and 20000 players, FIFA 2022 data set provided by Kaggle is one of the interesting dataset for the data analysis and statistical learning approaches. We are mainly focusing on the English Premiere Leagure from the FIFA 2022 and explore through the unsupervised learning techniques. The overall FIFA2022 dataset is downloaded in the csv format and then premiere league data is extracted as pandas dataframe followed by data cleaning and feature engineering. The link to the dataset is: https://www.kaggle.com/datasets/stefanoleone992/fifa-22-complete-player-dataset
+
+Loading, Previewing and Preparing the Data
+
+The FIFA 22 dataset consists of around 19000 rows(players) and more than 100 columns(features). As this study is focused on the premiere league players only, so the dataset is prepared accordingly; the total number of players and the features will be reduced.
+
+```{r}
+install.packages(c("FactoMineR", "factoextra","readxl"))
+install.packages(c("ClusteR","cluster"))
+library (readxl)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(reshape2)
+library(kableExtra)
+library(ggrepel)
+library(corrplot)
+library(stringr)
+library(ClusterR)
+library(cluster)
+```
+
+```{r}
+library("readxl")
+Fifa22<-read_excel("C:\\Users\\DELL\\Desktop\\Premiere_League_Players_022.xlsx")
+Fifa22
+```
+ 
+ Extracting only premier league data: From more than 19000 observations, it is reduced to now 652 observations
+ 
+```{r}
+library("dplyr")
+EPL <- Fifa22%>% filter(league_name == "English Premier League")
+EPL
+```
+
+
+```{r}
+EPL$player_positions <- sapply(strsplit(EPL$player_positions, ","), `[`, 1)
+EPL
+```
+
+
+```{r}
+library(ggplot2)
+
+ggplot(EPL, aes(x = overall)) +
+  geom_histogram(binwidth = 1, color = "white", fill = "cornflowerblue") +
+  labs(title = "Distributions of Player Ratings", x = "Overall Ratings", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+library(viridis)
+library(reshape2) 
+players_m <-melt(EPL[,c(7,39:44)])
+head(players_m)
+
+```
+
+```{r}
+gp <- ggplot(data = players_m, aes(y = variable, x = value, fill = variable, alpha = 0.9)) + 
+  geom_boxplot() + geom_violin() + scale_fill_manual(values = viridis(7)) + guides(fill = "none")
+gp
+```
+
+```{r}
+EPL_filtered <- EPL[EPL$overall >= 80, ]
+
+ggplot(EPL_filtered, aes(x = overall)) +
+  geom_histogram(binwidth = 1, color = "white", fill = "cornflowerblue") +
+  geom_density(color = "red") +   # add a KDE plot
+  labs(title = "Distributions of Player Ratings (Overall >= 80)", x = "Overall Ratings", y = "Density") +
+  theme_minimal()
+```
+
+
+```{r}
+library(ggrepel)
+
+
+ggplot(EPL_filtered, aes(x = age, y = overall, color = player_positions)) +
+  geom_point(size = 3) +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Players Ages vs Overall Rating",
+       x = "Ages", y = "Overall Rating", 
+       color = "Players Position") +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  geom_text_repel(data = subset(EPL_filtered, 
+                                overall >= 90),
+                  aes(label = short_name), size = 4)
+```
+
+
+```{r}
+library(ggplot2)
+
+EPL_filtered$potential <- as.numeric(EPL_filtered$potential)
+EPL_filtered$wage_eur <- as.numeric(EPL_filtered$wage_eur)
+
+ggplot(EPL_filtered, aes(x = potential, y = wage_eur, color = international_reputation)) +
+  geom_point() +
+  xlab("Potential") +
+  ylab("Wage EUR") +
+  ggtitle("Players Potential Vs Wage") +
+  theme(plot.title = element_text( size = 18)) +
+  labs(color = "International Reputation")
+
+label_point <- function(x, y, val, g){
+  df <- data.frame(x = x, y = y, val = val)
+  df <- df[df$x > 85,]
+  g <- g + geom_text(data = df, aes(x = x+0.1, y = y+0.1, label = val), size = 3)
+  return(g)
+}
+
+plot <- ggplot(EPL_filtered, aes(x = overall, y = wage_eur)) +
+  geom_point(aes(color = international_reputation)) +
+  xlab("Overall") +
+  ylab("Wage EUR") +
+  ggtitle("Players Potential Vs Wage") +
+  theme(plot.title = element_text( size = 18)) +
+  labs(color = "International Reputation")
+
+plot <- label_point(EPL_filtered$overall, EPL_filtered$wage_eur, EPL_filtered$short_name, plot)
+
+plot
+```
+
+Unnecessary columns are dropped from the data set
+```{r}
+columns_to_keep <-c('short_name','player_positions','age', 'height_cm', 'weight_kg', 'overall', 'potential',
+                'value_eur', 'wage_eur','club_position','club_name','work_rate','international_reputation','weak_foot',
+                'skill_moves','pace', 'shooting',
+                'passing', 'dribbling', 'defending', 'physic',
+                'attacking_crossing', 'attacking_finishing',
+                'attacking_heading_accuracy', 'attacking_short_passing',
+                'attacking_volleys', 'skill_dribbling', 'skill_curve',
+                'skill_fk_accuracy', 'skill_long_passing', 'skill_ball_control',
+                'movement_acceleration', 'movement_sprint_speed', 'movement_agility',
+                'movement_reactions', 'movement_balance', 'power_shot_power',
+                'power_jumping', 'power_stamina', 'power_strength', 'power_long_shots',
+                'mentality_aggression', 'mentality_interceptions',
+                'mentality_positioning', 'mentality_vision', 'mentality_penalties',
+                'mentality_composure', 'defending_marking_awareness', 'defending_standing_tackle',
+                'defending_sliding_tackle', 'goalkeeping_diving',
+                'goalkeeping_handling', 'goalkeeping_kicking',
+                'goalkeeping_positioning', 'goalkeeping_reflexes','goalkeeping_speed')
+EPL_filtered <- EPL_filtered[, columns_to_keep]
+EPL_filtered
+```
+
+```{r}
+library (corrplot)
+players_numeric_vars <- 
+  sapply(EPL_filtered, is.numeric) 
+
+players_correlations <- 
+  cor(EPL_filtered[,players_numeric_vars],
+      use = "pairwise.complete.obs")
+
+corrplot(players_correlations, 
+         method = "color",tl.cex = 0.5)
+```
+
+It can be seen that the goalkeepers skills are more similar to defending and they are not  highly correlated to the outfield players. Also they can be easily separated into the clusters. Hence the goal keepers and goal keeping features are excluded for the analyisis purpose. 
+
+```{r}
+library(stringr) 
+goalkeepers <- str_detect(EPL_filtered$player_positions, "GK")
+sum(goalkeepers)
+```
+Only 16 out of 128 players (12%)... So goalkeepers are removed. 
+
+```{r}
+goalkeeper_features <- c("goalkeeping_diving", "goalkeeping_handling", "goalkeeping_kicking", "goalkeeping_positioning", "goalkeeping_reflexes", "goalkeeping_speed")
+Premier_League1 <- EPL_filtered[, !(names(EPL_filtered) %in% goalkeeper_features)]
+Premier_League1
+
+```
+
+```{r}
+Premier_League_022 <- Premier_League1[Premier_League1$player_positions != 'GK', ]
+Premier_League_022
+```
+```{r}
+rownames(Premier_League_022) <- Premier_League_022$short_name
+Premier_League_022
+```
+
+```{r}
+data.frame(lapply(Premier_League_022, class))
+
+```
+
+```{r}
+summary(Premier_League_022)
+```
+
+```{r}
+unique(Premier_League_022$club_position)
+```
+
+
+```{r}
+skills_vars <- c(6,17:50)
+names(Premier_League_022[,skills_vars])
+```
+
+When we look into this features, we can more or less separate the clusters of attacking and defending players quite well. A midfielder is more kind of universal player. 
+
+```{r}
+players_skills<- Premier_League_022[ skills_vars]
+rownames(players_skills) <- Premier_League_022$short_name
+players_skills
+#dim(players_skills)
+```
+```{r}
+rownames(players_skills)
+```
+
+```{r}
+players_info<-Premier_League_022[c(1,2,3,4,5,7,8,9,10,11,12,13,14,15)]
+players_info
+```
+
+```{r}
+num_players <- nrow(players_skills)
+```
+
+```{r}
+summary (players_skills)
+```
+
+```{r}
+#Kmeans clustering in original dataset
+
+
+#install.packages("ClusterR")
+#install.packages("cluster")
+
+library(ClusterR)
+library(cluster)
+
+#rownames(players_skills) <- paste(players_info$short_name, 1:num_players)
+set.seed(240) # Setting seed
+kmeans.re <- kmeans(players_skills, centers = 4, nstart = 20)
+kmeans.re
+```
+
+
+
+```{r}
+
+library(factoextra)
+fviz_nbclust(players_skills, kmeans, method = "wss") + geom_vline(xintercept = 4, linetype = 2) 
+```
+
+```{r}
+library(factoextra)
+fviz_cluster(
+  kmeans.re,
+  data = players_skills,
+  #choose.vars = NULL,
+  stand = TRUE,
+  axes = c(1,2),
+  geom = c("point", "text"),
+  repel = TRUE,
+  show.clust.cent = TRUE,
+  ellipse = TRUE,
+  ellipse.type = "convex",
+  ellipse.level = 0.95,
+  ellipse.alpha = 0.2,
+  shape = NULL,
+  pointsize = 1.5,
+  labelsize = 7,
+  main = "Cluster plot",
+  xlab = NULL,
+  ylab = NULL,
+  outlier.color = "black",
+  outlier.shape = 19,
+  outlier.pointsize = pointsize,
+  outlier.labelsize = labelsize,
+  ggtheme = theme_grey(),
+)
+```
+
+```{r}
+inertia <-  kmeans.re$tot.withinss
+inertia
+
+```
+attacking heading accuracy, power_jumping, power_strength, 
+```{r}
+options(ggrepel.max.overlaps = Inf)
+library(FactoMineR)
+library(factoextra) 
+
+res1 <- PCA(players_skills, scale.unit = TRUE, graph = FALSE, ncp = 5, quanti.sup = 1)
+fviz_pca_var(res1,
+             select.var= list(name = c("overall","attacking_heading_accuracy","power_jumping","power_strength",
+                                       "physic","mentality_aggression","defending_marking_awareness",
+                                       "defending","mentality_interceptions","skill_long_passing",
+                                       "attacking_short_passing","passing","mentality_vision",
+                                       "mentality_composure", "power_long_shots","mentality_positioning",
+                                       "shooting","dribbling","attacking_crossing","attacking_finishing",
+                                       "movement_acceleration","movement_sprint_speed", "attacking_volleys",
+                                       "skill_ball_control")),
+             labelsize=2,
+             repel = TRUE,
+             fill.var = "grey",
+             col.circle = "grey70",
+             aplha.var=1,
+             title = "Factor Plane for the FIFA 22 Premier League Data" )
+
+```
+
+```{r}
+library(ggrepel)
+fviz_pca_ind(res1, geom = "point", habillage = 1, ggtheme = theme_minimal(), label = "none") + 
+  geom_text_repel(aes(label = row.names(players_skills)), size = 2)
+```
+
+```{r}
+library(kableExtra)
+res1$var$coord %>% kbl() %>% kable_paper("hover", full_width = F, position = "left") %>%
+    column_spec(2, color = "black", background = spec_color(abs(res1$var$coord[,1]))) %>%
+    column_spec(3, color = "black", background = spec_color(abs(res1$var$coord[,2])))
+```
+
+The first component (x-axis) is about attacking, the second axis(y-axis) is about defense. The good midfielders tend to exhibit qualities that are closer to the y =x line. We can expect the best attackers to end up on the right end of the x axis, the best defenders on the y axis, best midfielders on the farther end of the y= x line.
+
+
+```{r}
+#Sreeplot to see how well the two component plane describes the variance in the dataset
+fviz_eig(res1, addlabels = TRUE)
+```
+
+More than 65%, which is decent, indicating that we can use this plane to interpret the result. 
+
+```{r}
+#col_top200 <- "Top200"
+col_vars <- "black"
+col_others <- "Others"
+#colors_biplot[top_200] <- rep(col_top200, length(top_200))
+colors_biplot <- character(length = num_players)
+#colors_biplot <- rep(col_others,  num_players)
+#Biplot with al players
+#install.packages("viridis")
+library(factoextra)
+library(viridis)  
+fviz_pca_biplot(res1,
+                label = "all",
+                labelsize = 2,
+                col.ind = colors_biplot,
+                col.var = (viridis(3))[2],
+                alpha.ind = 0.5,
+                ggtheme = theme_minimal(),
+                legend.title = "Players"
+                )+ 
+  geom_text_repel(aes(label = row.names(players_skills)), size = 2)
+```
+
+Looking at the individual biplots of the players we can see the defenders are on the top left corners.Ruben Dias, Harry Maguire, Thiago Silve Virjil Van Dijk are some of the top class defenders. Similarly the top midfielders are along the center with the likes of Bruno Ferdandes, Paul Pogba, Kevin Debryune, Elky Gundogan. The attacking players are more directed along the xaxis line: Cristiano Ronaldo, Heuing Min Son, Harry Kane, Marcus Rashford and so on. 
+
+Famous world-level forwards are on the far right, as expected.
+
+Thiago Silva and Ruben Dias, Virgil Van Dijk are known to be great defenders and so they are ahead of the pack on this factor plane.
+
+
+Extracting the PCA cordinates
+```{r}
+pca_coordinates <- as.data.frame(res1$ind$coord[,1:2])
+pca_coordinates
+rownames(pca_coordinates) <- Premier_League_022$short_name
+```
+
+
+```{r}
+library("FactoMineR")
+pca_dimdesc <- dimdesc(res1)
+pca_dimdesc$Dim.1
+```
+
+```{r}
+wss <- sapply(1:10, function(k){kmeans(pca_coordinates, k, nstart=10, iter.max = 1000 )$tot.withinss})
+plot(1:10, wss, type="b", xlab="Number of Clusters", ylab="Within groups sum of squares", main = "Within-Cluster Sum of Squares for K-Means Clustering")  
+abline(h = 100, lty = 2)
+legend("topright", legend = "WSS", lty = 1, col = "blue", bty = "n")
+points(1:10, wss, col = "black", pch = 19)
+lines(1:10, wss, col = "red")
+```
+
+Within-Cluster Sum of Squares" (WSS) is a measure of how compact the clusters are, or how close the data points within each cluster are to their respective cluster center. It is calculated as the sum of squared distances of all data points within each cluster to their cluster center.
+
+In k-means clustering, the goal is to minimize the WSS, which means finding the optimal number of clusters that result in the lowest WSS value.
+
+By plotting the WSS values for different numbers of clusters, we can visually identify the "elbow point," or the point of diminishing returns, where adding more clusters does not significantly reduce the WSS value. This elbow point is often considered the optimal number of clusters for k-means clustering.
+
+From the elbow plot we can select 4 number of clusters for analysis
+
+
+```{r}
+k <- 4
+kmeans_result <- kmeans(pca_coordinates, k, nstart = 10, iter.max = 1000) 
+kmeans_result
+``` 
+```{r}
+inertia1 <-  kmeans_result$tot.withinss
+inertia1
+```
+
+```{r}
+table(kmeans_result$cluster)
+```
+
+```{r}
+fviz_cluster(
+  kmeans_result,
+  data = pca_coordinates,
+  #choose.vars = NULL,
+  stand = TRUE,
+  axes = c(1, 2),
+  geom = c("point", "text"),
+  repel = TRUE,
+  show.clust.cent = TRUE,
+  ellipse = TRUE,
+  ellipse.type = "convex",
+  ellipse.level = 0.95,
+  ellipse.alpha = 0.2,
+  shape = NULL,
+  pointsize = 1.5,
+  labelsize = 7,
+  main = "Cluster plot",
+  xlab = NULL,
+  ylab = NULL,
+  outlier.color = "black",
+  outlier.shape = 19,
+  outlier.pointsize = pointsize,
+  outlier.labelsize = labelsize,
+  ggtheme = theme_grey(),
+)
+```
+
+Linear Regression
+
+A linear regression model that analyzes the relationship between a response variable(y) and its interaction with one or more variables(x) is being analyzed. 
+In this case, 
+y = value_euro
+x={overall, age, pace, shooting, passing, dribbling, physic, defending }
+
+```{r}
+data_lm<-Premier_League_022[c(1,3,4,5,6,8,16,10,17,18,19,20,21)]
+data_lm
+```
+
+
+```{r}
+colnames(data_lm)
+```
+
+
+
+```{r}
+independent_vars<- data_lm[,c("age","height_cm",
+                              "weight_kg","overall",
+                              "pace","shooting",
+                              "passing","dribbling","defending",
+                              "physic")]
+dependent_var<-data_lm$value_eur 
+data_lm2<-data.frame(independent_vars,dependent_var)
+data_lm2
+multiple_model <- lm(dependent_var ~ ., data = data_lm2)
+```
+
+
+```{r}
+plot(multiple_model)
+```
+
+
+```{r}
+summary(multiple_model)
+```
+
+```{r}
+independent_vars1<- data_lm[,c("age",
+                              "overall"
+                              )]
+dependent_var1<-data_lm$value_eur 
+data_lm3<-data.frame(independent_vars1,dependent_var1)
+data_lm3
+multiple_model2 <- lm(dependent_var1 ~ ., data = data_lm3)
+```
+
+```{r}
+summary(multiple_model2)
+```
+
+
+```{r}
+plot(multiple_model2)
+```
+
